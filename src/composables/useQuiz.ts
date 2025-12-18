@@ -14,11 +14,16 @@ import {
   startSession,
   updateSession,
   endSession,
-  getIncorrectQuestions,
   getStatistics,
   saveProgress,
 } from "../utils/progressStorage";
 import type { LearningStatistics } from "../types/progress";
+import {
+  AVAILABLE_DATA_SOURCES,
+  DATA_SOURCE_STORAGE_KEY,
+  DEFAULT_DATA_SOURCE_ID,
+  type DataSource,
+} from "../config/dataSources";
 
 export interface Question {
   number: number;
@@ -49,6 +54,11 @@ export interface QuizComposable {
   learningStats: ComputedRef<LearningStatistics>;
   sessionTime: Ref<number>;
 
+  // データソース関連
+  availableDataSources: DataSource[];
+  selectedDataSource: Ref<string>;
+  changeDataSource: (dataSourceId: string) => Promise<void>;
+
   loadCSV: () => Promise<void>;
   submitAnswer: (answer: string) => void;
   goToQuestion: (index: number) => void;
@@ -63,8 +73,22 @@ export function useQuiz() {
   const loadError = ref<string | null>(null);
   const sessionTime = ref<number>(0);
 
+  // データソース選択
+  const savedDataSource = localStorage.getItem(DATA_SOURCE_STORAGE_KEY);
+  const selectedDataSource = ref<string>(
+    savedDataSource || DEFAULT_DATA_SOURCE_ID
+  );
+
   // セッション時間の更新用タイマー
   let sessionTimer: ReturnType<typeof setInterval> | null = null;
+
+  // 現在選択されているデータソースを取得
+  const getCurrentDataSource = (): DataSource => {
+    const source = AVAILABLE_DATA_SOURCES.find(
+      (ds) => ds.id === selectedDataSource.value
+    );
+    return source || AVAILABLE_DATA_SOURCES[0];
+  };
 
   // CSV読み込み（BOM除去・空行/カラム不足スキップ・改行/カンマ対応）
   async function loadCSV(): Promise<void> {
@@ -72,9 +96,8 @@ export function useQuiz() {
       isLoading.value = true;
       loadError.value = null;
 
-      const response = await fetch(
-        "/salesforce_data_cloud_questions_complete.csv"
-      );
+      const dataSource = getCurrentDataSource();
+      const response = await fetch(dataSource.filePath);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -162,8 +185,8 @@ export function useQuiz() {
       userAnswers.value = Array(questions.value.length).fill(null);
       correctAnswers.value = Array(questions.value.length).fill([]);
 
-      // 学習進捗から前回の位置を復元
-      const progress = loadProgress();
+      // 学習進捗から前回の位置を復元（データソースごと）
+      const progress = loadProgress(selectedDataSource.value);
       if (
         progress.currentPosition >= 0 &&
         progress.currentPosition < questions.value.length
@@ -186,11 +209,11 @@ export function useQuiz() {
       progress.statistics.totalQuestions = questions.value.length;
       progress.lastStudyDate = new Date().toISOString();
 
-      // 更新されたprogressを保存
-      saveProgress(progress);
+      // 更新されたprogressを保存（データソースごと）
+      saveProgress(progress, selectedDataSource.value);
 
       // セッションを開始
-      startSession();
+      startSession(selectedDataSource.value);
       startSessionTimer();
 
       console.log("CSV読み込み完了:", {
@@ -242,10 +265,15 @@ export function useQuiz() {
 
     // LocalStorageに保存（文字列形式に変換）
     const answerString = Array.isArray(answer) ? answer.join(",") : answer;
-    saveAnswer(question.number, answerString, question.correct_answer);
+    saveAnswer(
+      question.number,
+      answerString,
+      question.correct_answer,
+      selectedDataSource.value
+    );
 
     // セッション情報も更新して統計を同期
-    updateSession();
+    updateSession(selectedDataSource.value);
 
     console.log(
       `問題${question.number}に回答: ${answerString} (正解: ${question.correct_answer})`
@@ -264,9 +292,31 @@ export function useQuiz() {
   function goToQuestion(index: number): void {
     if (index >= 0 && index < questions.value.length) {
       currentIndex.value = index;
-      saveCurrentPosition(index);
+      saveCurrentPosition(index, selectedDataSource.value);
       console.log(`問題${index + 1}に移動`);
     }
+  }
+
+  // データソースを変更
+  async function changeDataSource(dataSourceId: string): Promise<void> {
+    if (!AVAILABLE_DATA_SOURCES.find((ds) => ds.id === dataSourceId)) {
+      console.error(`無効なデータソースID: ${dataSourceId}`);
+      return;
+    }
+
+    // 現在のデータソースのセッションを終了
+    stopSessionTimer();
+    endSession(selectedDataSource.value);
+
+    // データソースを変更
+    selectedDataSource.value = dataSourceId;
+    localStorage.setItem(DATA_SOURCE_STORAGE_KEY, dataSourceId);
+
+    // セッション時間をリセット
+    sessionTime.value = 0;
+
+    // 新しいデータソースのCSVを読み込み
+    await loadCSV();
   }
 
   // セッションタイマーを開始
@@ -280,7 +330,7 @@ export function useQuiz() {
 
       // 1分ごとにセッション情報を更新（より頻繁に）
       if (sessionTime.value % 60 === 0) {
-        updateSession();
+        updateSession(selectedDataSource.value);
       }
     }, 1000);
   }
@@ -291,7 +341,7 @@ export function useQuiz() {
       clearInterval(sessionTimer);
       sessionTimer = null;
     }
-    updateSession(); // 最終更新
+    updateSession(selectedDataSource.value); // 最終更新
   }
 
   // 計算されたプロパティ
@@ -359,7 +409,9 @@ export function useQuiz() {
   );
 
   // 学習統計を取得
-  const learningStats = computed<LearningStatistics>(() => getStatistics());
+  const learningStats = computed<LearningStatistics>(() =>
+    getStatistics(selectedDataSource.value)
+  );
 
   // ライフサイクル
   onMounted(() => {
@@ -367,7 +419,7 @@ export function useQuiz() {
 
     // ページ離脱時に学習時間を保存
     const handleBeforeUnload = () => {
-      updateSession(); // 最終的な学習時間を更新
+      updateSession(selectedDataSource.value); // 最終的な学習時間を更新
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -380,7 +432,7 @@ export function useQuiz() {
 
   onUnmounted(() => {
     stopSessionTimer();
-    endSession(); // ページ離脱時にセッションを終了
+    endSession(selectedDataSource.value); // ページ離脱時にセッションを終了
 
     // イベントリスナーをクリーンアップ
     if ((window as any).__quizCleanup) {
@@ -404,6 +456,9 @@ export function useQuiz() {
     loadError,
     learningStats,
     sessionTime,
+    availableDataSources: AVAILABLE_DATA_SOURCES,
+    selectedDataSource,
+    changeDataSource,
     loadCSV,
     submitAnswer,
     goToQuestion,

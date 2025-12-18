@@ -3,6 +3,27 @@
     <div class="card h-full">
       <div class="card-header text-center">
         <h2 class="text-xl font-bold text-primary">学習進捗</h2>
+        <!-- データソース選択 -->
+        <div class="data-source-selector">
+          <label for="data-source-select" class="data-source-label">
+            問題集:
+          </label>
+          <select
+            id="data-source-select"
+            :value="quiz.selectedDataSource.value"
+            @change="handleDataSourceChange"
+            class="data-source-select"
+            :disabled="quiz.isLoading.value"
+          >
+            <option
+              v-for="source in quiz.availableDataSources"
+              :key="source.id"
+              :value="source.id"
+            >
+              {{ source.name }}
+            </option>
+          </select>
+        </div>
       </div>
 
       <!-- ローディング中 -->
@@ -138,9 +159,20 @@ interface ExtendedQuizComposable extends QuizComposable {
   correctCount: ComputedRef<number>;
   answeredCount: ComputedRef<number>;
   accuracy: ComputedRef<number>;
+  availableDataSources: Array<{ id: string; name: string; filePath: string }>;
+  selectedDataSource: Ref<string>;
+  changeDataSource: (dataSourceId: string) => Promise<void>;
 }
 
 const quiz = inject<ExtendedQuizComposable>("quiz")!;
+
+const handleDataSourceChange = async (event: Event): Promise<void> => {
+  const target = event.target as HTMLSelectElement;
+  const newDataSourceId = target.value;
+  if (newDataSourceId !== quiz.selectedDataSource.value) {
+    await quiz.changeDataSource(newDataSourceId);
+  }
+};
 
 // セッション時間を分:秒の形式でフォーマット
 const formatSessionTime = computed(() => {
@@ -165,7 +197,7 @@ const formatTotalStudyTime = computed(() => {
 
 // 今日の学習時間を計算
 const formatTodayStudyTime = computed(() => {
-  const todayMinutes = getTodayStudyTime();
+  const todayMinutes = getTodayStudyTime(quiz.selectedDataSource.value);
   const currentSessionMinutes = Math.floor(quiz.sessionTime.value / 60);
   const totalTodayMinutes = todayMinutes + currentSessionMinutes;
 
@@ -188,7 +220,8 @@ const formatLastStudyDate = computed(() => {
 
   // LocalStorageから直接取得
   try {
-    const stored = localStorage.getItem("salesforce_quiz_progress");
+    const storageKey = `salesforce_quiz_progress_${quiz.selectedDataSource.value}`;
+    const stored = localStorage.getItem(storageKey);
     if (stored) {
       const progress = JSON.parse(stored);
       const date = new Date(progress.lastStudyDate);
@@ -209,8 +242,10 @@ const formatLastStudyDate = computed(() => {
 // 開発用: データリセット
 const resetProgressData = () => {
   if (confirm("本当にデータをリセットしますか？この操作は元に戻せません。")) {
-    localStorage.removeItem("salesforce_quiz_progress");
-    sessionStorage.removeItem("salesforce_quiz_session_start");
+    const storageKey = `salesforce_quiz_progress_${quiz.selectedDataSource.value}`;
+    const sessionStorageKey = `salesforce_quiz_session_start_${quiz.selectedDataSource.value}`;
+    localStorage.removeItem(storageKey);
+    sessionStorage.removeItem(sessionStorageKey);
     alert("データがリセットされました。ページを再読み込みします。");
     window.location.reload();
   }
@@ -233,6 +268,50 @@ const resetProgressData = () => {
 
 .card-header {
   flex-shrink: 0;
+  padding-bottom: var(--spacing-4);
+}
+
+.data-source-selector {
+  margin-top: var(--spacing-4);
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.data-source-label {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-gray-600);
+  margin-bottom: var(--spacing-2);
+  text-align: left;
+}
+
+.data-source-select {
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--border-radius-md);
+  background-color: var(--color-white);
+  color: var(--color-gray-800);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.data-source-select:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
+}
+
+.data-source-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.data-source-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
 }
 
 .card-body {

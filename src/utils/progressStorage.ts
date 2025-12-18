@@ -11,6 +11,13 @@ import type {
 import { STORAGE_KEYS, DATA_VERSION } from "../types/progress";
 
 /**
+ * データソースIDからLocalStorageキーを生成
+ */
+function getStorageKey(dataSourceId: string): string {
+  return `${STORAGE_KEYS.QUIZ_PROGRESS}_${dataSourceId}`;
+}
+
+/**
  * 初期データを作成
  */
 export function createInitialProgress(): QuizProgress {
@@ -47,9 +54,12 @@ export function createInitialProgress(): QuizProgress {
 /**
  * LocalStorageから学習進捗データを読み込み
  */
-export function loadProgress(): QuizProgress {
+export function loadProgress(
+  dataSourceId: string = "data_cloud"
+): QuizProgress {
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.QUIZ_PROGRESS);
+    const storageKey = getStorageKey(dataSourceId);
+    const stored = localStorage.getItem(storageKey);
 
     if (!stored) {
       return createInitialProgress();
@@ -79,10 +89,14 @@ export function loadProgress(): QuizProgress {
 /**
  * LocalStorageに学習進捗データを保存
  */
-export function saveProgress(progress: QuizProgress): void {
+export function saveProgress(
+  progress: QuizProgress,
+  dataSourceId: string = "data_cloud"
+): void {
   try {
     progress.lastUpdated = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEYS.QUIZ_PROGRESS, JSON.stringify(progress));
+    const storageKey = getStorageKey(dataSourceId);
+    localStorage.setItem(storageKey, JSON.stringify(progress));
   } catch (error) {
     console.error("Failed to save progress data:", error);
   }
@@ -94,9 +108,10 @@ export function saveProgress(progress: QuizProgress): void {
 export function saveAnswer(
   questionNumber: number,
   userAnswer: string,
-  correctAnswer: string
+  correctAnswer: string,
+  dataSourceId: string = "data_cloud"
 ): void {
-  const progress = loadProgress();
+  const progress = loadProgress(dataSourceId);
   const isCorrect = userAnswer === correctAnswer;
   const now = new Date().toISOString();
 
@@ -126,30 +141,32 @@ export function saveAnswer(
     正解率: progress.statistics.accuracy + "%",
   });
 
-  saveProgress(progress);
+  saveProgress(progress, dataSourceId);
 }
 
 /**
  * 現在位置を保存
  */
-export function saveCurrentPosition(position: number): void {
-  const progress = loadProgress();
+export function saveCurrentPosition(
+  position: number,
+  dataSourceId: string = "data_cloud"
+): void {
+  const progress = loadProgress(dataSourceId);
   progress.currentPosition = position;
   progress.lastStudyDate = new Date().toISOString();
-  saveProgress(progress);
+  saveProgress(progress, dataSourceId);
 }
 
 /**
  * セッション開始
  */
-export function startSession(): void {
-  const progress = loadProgress();
+export function startSession(dataSourceId: string = "data_cloud"): void {
+  const progress = loadProgress(dataSourceId);
   const now = new Date().toISOString();
 
   // 既に同じセッションが開始されていないかチェック
-  const currentSessionStart = sessionStorage.getItem(
-    STORAGE_KEYS.SESSION_START
-  );
+  const sessionStorageKey = `${STORAGE_KEYS.SESSION_START}_${dataSourceId}`;
+  const currentSessionStart = sessionStorage.getItem(sessionStorageKey);
   const isNewSession =
     !currentSessionStart ||
     new Date(now).getTime() - new Date(currentSessionStart).getTime() >
@@ -167,21 +184,21 @@ export function startSession(): void {
     );
   }
 
-  saveProgress(progress);
+  saveProgress(progress, dataSourceId);
 
   // セッション開始時刻をsessionStorageに保存
-  sessionStorage.setItem(STORAGE_KEYS.SESSION_START, now);
+  sessionStorage.setItem(sessionStorageKey, now);
 }
 
 /**
  * セッション更新
  */
-export function updateSession(): void {
-  const progress = loadProgress();
+export function updateSession(dataSourceId: string = "data_cloud"): void {
+  const progress = loadProgress(dataSourceId);
   const now = new Date().toISOString();
+  const sessionStorageKey = `${STORAGE_KEYS.SESSION_START}_${dataSourceId}`;
   const sessionStart =
-    sessionStorage.getItem(STORAGE_KEYS.SESSION_START) ||
-    progress.session.startTime;
+    sessionStorage.getItem(sessionStorageKey) || progress.session.startTime;
 
   progress.session.lastActiveTime = now;
 
@@ -205,21 +222,21 @@ export function updateSession(): void {
       (progress.statistics.totalStudyTimeMinutes || 0) + incrementalTime;
 
     // 今日の学習記録も増分を追加
-    updateTodayStudyRecord(incrementalTime);
+    updateTodayStudyRecord(incrementalTime, dataSourceId);
   }
 
-  saveProgress(progress);
+  saveProgress(progress, dataSourceId);
 }
 
 /**
  * セッション終了
  */
-export function endSession(): void {
-  const progress = loadProgress();
+export function endSession(dataSourceId: string = "data_cloud"): void {
+  const progress = loadProgress(dataSourceId);
   const now = new Date().toISOString();
+  const sessionStorageKey = `${STORAGE_KEYS.SESSION_START}_${dataSourceId}`;
   const sessionStart =
-    sessionStorage.getItem(STORAGE_KEYS.SESSION_START) ||
-    progress.session.startTime;
+    sessionStorage.getItem(sessionStorageKey) || progress.session.startTime;
 
   // セッション時間を計算（分単位）
   const sessionStartTime = new Date(sessionStart).getTime();
@@ -238,20 +255,20 @@ export function endSession(): void {
       (progress.statistics.totalStudyTimeMinutes || 0) + sessionMinutes;
 
     // 今日の学習記録も更新
-    updateTodayStudyRecord(sessionMinutes);
+    updateTodayStudyRecord(sessionMinutes, dataSourceId);
   }
 
   console.log("セッション終了:", {
     セッション時間: sessionMinutes + "分",
     累計学習時間: progress.statistics.totalStudyTimeMinutes + "分",
-    今日の学習時間: getTodayStudyTime() + "分",
+    今日の学習時間: getTodayStudyTime(dataSourceId) + "分",
     学習回数: progress.statistics.sessionsCount,
   });
 
-  saveProgress(progress);
+  saveProgress(progress, dataSourceId);
 
   // SessionStorageをクリア
-  sessionStorage.removeItem(STORAGE_KEYS.SESSION_START);
+  sessionStorage.removeItem(sessionStorageKey);
 }
 
 /**
@@ -295,9 +312,11 @@ function updateReviewData(progress: QuizProgress): void {
 /**
  * 学習データをリセット
  */
-export function resetProgress(): void {
-  localStorage.removeItem(STORAGE_KEYS.QUIZ_PROGRESS);
-  sessionStorage.removeItem(STORAGE_KEYS.SESSION_START);
+export function resetProgress(dataSourceId: string = "data_cloud"): void {
+  const storageKey = getStorageKey(dataSourceId);
+  const sessionStorageKey = `${STORAGE_KEYS.SESSION_START}_${dataSourceId}`;
+  localStorage.removeItem(storageKey);
+  sessionStorage.removeItem(sessionStorageKey);
 }
 
 /**
@@ -311,16 +330,20 @@ export function exportProgress(): string {
 /**
  * 学習統計を取得
  */
-export function getStatistics(): LearningStatistics {
-  const progress = loadProgress();
+export function getStatistics(
+  dataSourceId: string = "data_cloud"
+): LearningStatistics {
+  const progress = loadProgress(dataSourceId);
   return progress.statistics;
 }
 
 /**
  * 復習が必要な問題を取得
  */
-export function getIncorrectQuestions(): number[] {
-  const progress = loadProgress();
+export function getIncorrectQuestions(
+  dataSourceId: string = "data_cloud"
+): number[] {
+  const progress = loadProgress(dataSourceId);
   return progress.review.incorrectQuestions;
 }
 
@@ -336,10 +359,11 @@ function getTodayDateString(): string {
  */
 export function updateTodayStudyRecord(
   studyTimeMinutes: number,
+  dataSourceId: string = "data_cloud",
   questionsAnswered?: number,
   correctAnswers?: number
 ): void {
-  const progress = loadProgress();
+  const progress = loadProgress(dataSourceId);
   const today = getTodayDateString();
 
   const existingRecord = progress.dailyRecords[today] || {
@@ -363,14 +387,14 @@ export function updateTodayStudyRecord(
         : existingRecord.correctAnswers,
   };
 
-  saveProgress(progress);
+  saveProgress(progress, dataSourceId);
 }
 
 /**
  * 今日の学習時間を取得
  */
-export function getTodayStudyTime(): number {
-  const progress = loadProgress();
+export function getTodayStudyTime(dataSourceId: string = "data_cloud"): number {
+  const progress = loadProgress(dataSourceId);
   const today = getTodayDateString();
   return progress.dailyRecords[today]?.studyTimeMinutes || 0;
 }
@@ -378,8 +402,10 @@ export function getTodayStudyTime(): number {
 /**
  * 過去7日間の学習記録を取得
  */
-export function getWeeklyStudyRecords(): DailyStudyRecord[] {
-  const progress = loadProgress();
+export function getWeeklyStudyRecords(
+  dataSourceId: string = "data_cloud"
+): DailyStudyRecord[] {
+  const progress = loadProgress(dataSourceId);
   const records: DailyStudyRecord[] = [];
 
   for (let i = 6; i >= 0; i--) {
