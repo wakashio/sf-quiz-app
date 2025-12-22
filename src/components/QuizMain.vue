@@ -35,7 +35,7 @@
 
         <div class="options-section">
           <div
-            v-for="(option, index) in ['A', 'B', 'C', 'D']"
+            v-for="(option, index) in availableOptions"
             :key="index"
             class="option-item"
             :class="{ 'option-selected': isOptionSelected(option) }"
@@ -84,6 +84,17 @@
       </div>
 
       <div class="card-footer">
+        <!-- デバッグ情報 -->
+        <div style="padding: 8px; background: #f0f0f0; margin-bottom: 8px; font-size: 12px; border-radius: 4px;">
+          <strong>デバッグ情報:</strong><br>
+          currentIndex: {{ quiz.currentIndex.value }}<br>
+          hasAnswered: {{ hasAnswered }}<br>
+          showExplanation: {{ showExplanation }}<br>
+          selectedAnswer: {{ JSON.stringify(selectedAnswer) }}<br>
+          総問題数: {{ quiz.questions.value.length }}<br>
+          次の問題ボタン表示: {{ hasAnswered ? '表示' : '非表示' }}
+        </div>
+
         <div class="action-buttons">
           <button
             @click="submitAnswer"
@@ -95,7 +106,7 @@
           </button>
 
           <button
-            @click="nextQuestion"
+            @click="handleNextQuestionClick"
             v-if="hasAnswered"
             class="btn btn-secondary btn-lg"
           >
@@ -113,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { inject, ref, computed, type Ref } from "vue";
+import { inject, ref, computed, watch, type Ref } from "vue";
 import type { Question } from "../composables/useQuiz";
 
 interface QuizComposable {
@@ -149,6 +160,16 @@ const getOptionText = (option: string): string => {
   return quiz.currentQuestion.value[key] as string;
 };
 
+// 空でない選択肢のみを返す
+const availableOptions = computed(() => {
+  if (!quiz.currentQuestion.value) return [];
+  const options = ['A', 'B', 'C', 'D'];
+  return options.filter((option) => {
+    const text = getOptionText(option);
+    return text && text.trim() !== '';
+  });
+});
+
 const selectAnswer = (option: string): void => {
   if (hasAnswered.value) return;
 
@@ -180,37 +201,96 @@ const isOptionSelected = (option: string): boolean => {
 };
 
 const submitAnswer = (): void => {
-  if (hasAnswered.value) return;
+  console.log("[submitAnswer] 関数が呼ばれました", {
+    hasAnswered: hasAnswered.value,
+    selectedAnswer: selectedAnswer.value,
+    isMultipleChoice: isMultipleChoice.value,
+  });
+
+  if (hasAnswered.value) {
+    console.log("[submitAnswer] 既に回答済みです。処理をスキップします");
+    return;
+  }
 
   if (isMultipleChoice.value) {
     // 複数選択の場合、最低1つは選択されている必要がある
     if (
       !Array.isArray(selectedAnswer.value) ||
       selectedAnswer.value.length === 0
-    )
+    ) {
+      console.log("[submitAnswer] 複数選択問題で選択がありません");
       return;
+    }
   } else {
     // 単一選択の場合
-    if (!selectedAnswer.value) return;
+    if (!selectedAnswer.value) {
+      console.log("[submitAnswer] 単一選択問題で選択がありません");
+      return;
+    }
   }
+
+  console.log("[submitAnswer] 回答を提出します", {
+    selectedAnswer: selectedAnswer.value,
+  });
 
   // useQuizのsubmitAnswer関数を呼び出して記録
   quiz.submitAnswer(selectedAnswer.value);
 
   hasAnswered.value = true;
   showExplanation.value = true;
+
+  console.log("[submitAnswer] 回答提出完了", {
+    hasAnswered: hasAnswered.value,
+    showExplanation: showExplanation.value,
+  });
+};
+
+const handleNextQuestionClick = (event: MouseEvent): void => {
+  console.log("[handleNextQuestionClick] ボタンがクリックされました", {
+    event,
+    hasAnswered: hasAnswered.value,
+    currentIndex: quiz.currentIndex.value,
+    totalQuestions: quiz.questions.value.length,
+  });
+  nextQuestion();
 };
 
 const nextQuestion = (): void => {
-  if (quiz.currentIndex.value < quiz.questions.value.length - 1) {
-    const nextIndex = quiz.currentIndex.value + 1;
-    quiz.goToQuestion(nextIndex);
+  const currentIdx = quiz.currentIndex.value;
+  const totalQuestions = quiz.questions.value.length;
+  const canMoveNext = currentIdx < totalQuestions - 1;
+  
+  console.log("[nextQuestion] 関数が呼ばれました", {
+    currentIndex: currentIdx,
+    totalQuestions: totalQuestions,
+    hasAnswered: hasAnswered.value,
+    canMoveNext: canMoveNext,
+    condition: `${currentIdx} < ${totalQuestions - 1} = ${currentIdx < totalQuestions - 1}`,
+    questionsArray: quiz.questions.value.map((q, i) => ({ index: i, number: q.number })),
+  });
 
-    // 次の問題の状態を設定
-    const nextAnswer = quiz.userAnswers.value[nextIndex];
-    selectedAnswer.value = nextAnswer || (isMultipleChoice.value ? [] : "");
-    hasAnswered.value = nextAnswer !== null;
-    showExplanation.value = hasAnswered.value;
+  if (canMoveNext) {
+    const nextIndex = currentIdx + 1;
+    console.log("[nextQuestion] 次の問題に移動します", {
+      nextIndex,
+      currentIndex: currentIdx,
+      nextQuestionNumber: quiz.questions.value[nextIndex]?.number,
+    });
+    
+    quiz.goToQuestion(nextIndex);
+    
+    console.log("[nextQuestion] goToQuestion呼び出し後", {
+      currentIndex: quiz.currentIndex.value,
+      nextIndex,
+    });
+    // watchが自動的に状態を更新するため、ここでの状態更新は不要
+  } else {
+    console.warn("[nextQuestion] 最後の問題です。移動できません", {
+      currentIndex: currentIdx,
+      totalQuestions: totalQuestions,
+      maxIndex: totalQuestions - 1,
+      isLastQuestion: currentIdx === totalQuestions - 1,
+    });
   }
 };
 
@@ -223,6 +303,55 @@ const canSubmit = computed(() => {
     return selectedAnswer.value !== null && selectedAnswer.value !== undefined;
   }
 });
+
+// 問題が変更された時に状態をリセット
+watch(
+  () => quiz.currentIndex.value,
+  (newIndex, oldIndex) => {
+    console.log("[watch] currentIndexが変更されました", {
+      oldIndex,
+      newIndex,
+      questionsLength: quiz.questions.value.length,
+    });
+
+    if (newIndex >= 0 && newIndex < quiz.questions.value.length) {
+      const question = quiz.questions.value[newIndex];
+      const answer = quiz.userAnswers.value[newIndex];
+      
+      console.log("[watch] 問題データを取得", {
+        questionNumber: question?.number,
+        hasAnswer: answer !== null,
+        answer,
+      });
+      
+      // 次の問題が複数選択かどうかを判定
+      const isNextMultipleChoice = question
+        ? (question.correct_answer.includes(",") ||
+           question.correct_answer.includes("、"))
+        : false;
+      
+      console.log("[watch] 状態を更新", {
+        isNextMultipleChoice,
+        answer,
+        willSetSelectedAnswer: answer || (isNextMultipleChoice ? [] : ""),
+      });
+      
+      // 回答済みの場合はその回答を表示、未回答の場合は初期化
+      selectedAnswer.value = answer || (isNextMultipleChoice ? [] : "");
+      hasAnswered.value = answer !== null;
+      showExplanation.value = hasAnswered.value;
+      
+      console.log("[watch] 状態更新完了", {
+        selectedAnswer: selectedAnswer.value,
+        hasAnswered: hasAnswered.value,
+        showExplanation: showExplanation.value,
+      });
+    } else {
+      console.warn("[watch] 無効なインデックス", { newIndex, questionsLength: quiz.questions.value.length });
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <style scoped>

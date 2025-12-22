@@ -130,16 +130,27 @@ export function useQuiz() {
       const skippedRows: number[] = [];
 
       rawData.forEach((row, index) => {
+        // 無効な行をスキップ（「ここから先は有料部分です」などの行）
+        const questionText = String(row.question || "").trim();
+        if (
+          questionText === "" ||
+          questionText.includes("ここから先は有料部分です") ||
+          questionText.includes("有料部分")
+        ) {
+          console.log(`行 ${index + 2} をスキップ: 無効な行`, { questionText });
+          skippedRows.push(index + 2);
+          return;
+        }
+
         const requiredFields = [
           "number",
           "question",
           "choiceA",
           "choiceB",
-          "choiceC",
-          "choiceD",
           "correct_answer",
           "explanation",
         ];
+        const optionalFields = ["choiceC", "choiceD"];
         const hasAllFields = requiredFields.every((field) => {
           const value = row[field];
           return (
@@ -185,15 +196,34 @@ export function useQuiz() {
       userAnswers.value = Array(questions.value.length).fill(null);
       correctAnswers.value = Array(questions.value.length).fill([]);
 
+      console.log("[loadCSV] 問題読み込み完了", {
+        totalValidQuestions: validQuestions.length,
+        totalRawRows: rawData.length,
+        skippedRows: skippedRows.length,
+        firstQuestion: validQuestions[0] ? { number: validQuestions[0].number, index: 0 } : null,
+        lastQuestion: validQuestions[validQuestions.length - 1] 
+          ? { number: validQuestions[validQuestions.length - 1].number, index: validQuestions.length - 1 } 
+          : null,
+        questionsArray: validQuestions.slice(0, 5).map((q, i) => ({ index: i, number: q.number })),
+      });
+
       // 学習進捗から前回の位置を復元（データソースごと）
       const progress = loadProgress(selectedDataSource.value);
+      console.log("[loadCSV] 進捗復元", {
+        savedPosition: progress.currentPosition,
+        questionsLength: questions.value.length,
+        canRestore: progress.currentPosition >= 0 && progress.currentPosition < questions.value.length,
+      });
+
       if (
         progress.currentPosition >= 0 &&
         progress.currentPosition < questions.value.length
       ) {
         currentIndex.value = progress.currentPosition;
+        console.log("[loadCSV] 位置を復元", { restoredIndex: currentIndex.value });
       } else {
         currentIndex.value = 0;
+        console.log("[loadCSV] 初期位置に設定", { initialIndex: currentIndex.value });
       }
 
       // 過去の回答履歴を復元
@@ -290,10 +320,26 @@ export function useQuiz() {
 
   // 指定した問題に移動
   function goToQuestion(index: number): void {
+    console.log("[goToQuestion] 関数が呼ばれました", {
+      index,
+      currentIndex: currentIndex.value,
+      questionsLength: questions.value.length,
+    });
+
     if (index >= 0 && index < questions.value.length) {
+      const oldIndex = currentIndex.value;
       currentIndex.value = index;
       saveCurrentPosition(index, selectedDataSource.value);
-      console.log(`問題${index + 1}に移動`);
+      console.log(`[goToQuestion] 問題${index + 1}に移動完了`, {
+        oldIndex,
+        newIndex: currentIndex.value,
+        question: questions.value[index]?.number,
+      });
+    } else {
+      console.warn("[goToQuestion] 無効なインデックス", {
+        index,
+        questionsLength: questions.value.length,
+      });
     }
   }
 
