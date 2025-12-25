@@ -84,17 +84,6 @@
       </div>
 
       <div class="card-footer">
-        <!-- デバッグ情報 -->
-        <div style="padding: 8px; background: #f0f0f0; margin-bottom: 8px; font-size: 12px; border-radius: 4px;">
-          <strong>デバッグ情報:</strong><br>
-          currentIndex: {{ quiz.currentIndex.value }}<br>
-          hasAnswered: {{ hasAnswered }}<br>
-          showExplanation: {{ showExplanation }}<br>
-          selectedAnswer: {{ JSON.stringify(selectedAnswer) }}<br>
-          総問題数: {{ quiz.questions.value.length }}<br>
-          次の問題ボタン表示: {{ hasAnswered ? '表示' : '非表示' }}
-        </div>
-
         <div class="action-buttons">
           <button
             @click="submitAnswer"
@@ -163,10 +152,10 @@ const getOptionText = (option: string): string => {
 // 空でない選択肢のみを返す
 const availableOptions = computed(() => {
   if (!quiz.currentQuestion.value) return [];
-  const options = ['A', 'B', 'C', 'D'];
+  const options = ["A", "B", "C", "D"];
   return options.filter((option) => {
     const text = getOptionText(option);
-    return text && text.trim() !== '';
+    return text && text.trim() !== "";
   });
 });
 
@@ -259,14 +248,19 @@ const nextQuestion = (): void => {
   const currentIdx = quiz.currentIndex.value;
   const totalQuestions = quiz.questions.value.length;
   const canMoveNext = currentIdx < totalQuestions - 1;
-  
+
   console.log("[nextQuestion] 関数が呼ばれました", {
     currentIndex: currentIdx,
     totalQuestions: totalQuestions,
     hasAnswered: hasAnswered.value,
     canMoveNext: canMoveNext,
-    condition: `${currentIdx} < ${totalQuestions - 1} = ${currentIdx < totalQuestions - 1}`,
-    questionsArray: quiz.questions.value.map((q, i) => ({ index: i, number: q.number })),
+    condition: `${currentIdx} < ${totalQuestions - 1} = ${
+      currentIdx < totalQuestions - 1
+    }`,
+    questionsArray: quiz.questions.value.map((q, i) => ({
+      index: i,
+      number: q.number,
+    })),
   });
 
   if (canMoveNext) {
@@ -276,9 +270,9 @@ const nextQuestion = (): void => {
       currentIndex: currentIdx,
       nextQuestionNumber: quiz.questions.value[nextIndex]?.number,
     });
-    
+
     quiz.goToQuestion(nextIndex);
-    
+
     console.log("[nextQuestion] goToQuestion呼び出し後", {
       currentIndex: quiz.currentIndex.value,
       nextIndex,
@@ -317,37 +311,40 @@ watch(
     if (newIndex >= 0 && newIndex < quiz.questions.value.length) {
       const question = quiz.questions.value[newIndex];
       const answer = quiz.userAnswers.value[newIndex];
-      
+
       console.log("[watch] 問題データを取得", {
         questionNumber: question?.number,
         hasAnswer: answer !== null,
         answer,
       });
-      
+
       // 次の問題が複数選択かどうかを判定
       const isNextMultipleChoice = question
-        ? (question.correct_answer.includes(",") ||
-           question.correct_answer.includes("、"))
+        ? question.correct_answer.includes(",") ||
+          question.correct_answer.includes("、")
         : false;
-      
+
       console.log("[watch] 状態を更新", {
         isNextMultipleChoice,
         answer,
         willSetSelectedAnswer: answer || (isNextMultipleChoice ? [] : ""),
       });
-      
+
       // 回答済みの場合はその回答を表示、未回答の場合は初期化
       selectedAnswer.value = answer || (isNextMultipleChoice ? [] : "");
       hasAnswered.value = answer !== null;
       showExplanation.value = hasAnswered.value;
-      
+
       console.log("[watch] 状態更新完了", {
         selectedAnswer: selectedAnswer.value,
         hasAnswered: hasAnswered.value,
         showExplanation: showExplanation.value,
       });
     } else {
-      console.warn("[watch] 無効なインデックス", { newIndex, questionsLength: quiz.questions.value.length });
+      console.warn("[watch] 無効なインデックス", {
+        newIndex,
+        questionsLength: quiz.questions.value.length,
+      });
     }
   },
   { immediate: true }
