@@ -84,17 +84,6 @@
       </div>
 
       <div class="card-footer">
-        <!-- デバッグ情報 -->
-        <div style="padding: 8px; background: #f0f0f0; margin-bottom: 8px; font-size: 12px; border-radius: 4px;">
-          <strong>デバッグ情報:</strong><br>
-          currentIndex: {{ quiz.currentIndex.value }}<br>
-          hasAnswered: {{ hasAnswered }}<br>
-          showExplanation: {{ showExplanation }}<br>
-          selectedAnswer: {{ JSON.stringify(selectedAnswer) }}<br>
-          総問題数: {{ quiz.questions.value.length }}<br>
-          次の問題ボタン表示: {{ hasAnswered ? '表示' : '非表示' }}
-        </div>
-
         <div class="action-buttons">
           <button
             @click="submitAnswer"
